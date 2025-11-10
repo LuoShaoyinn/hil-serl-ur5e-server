@@ -116,7 +116,7 @@ class UR_controller():
         vel = np.linalg.norm(pos - self.target_pos) / (time.time() - self.last_movel_time)
         self.last_movel_time = time.time()
 
-        self.target_vel = 0.1
+        self.target_vel = 0.2
         self.target_pos = pos
         self.target_ori = ori
     
