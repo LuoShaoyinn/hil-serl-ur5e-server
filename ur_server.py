@@ -14,6 +14,7 @@ def main(_):
     ur5e = ur5e_driver.UR_controller()
     gripper = robotiq_gripper_driver.RobotiqGripper()
     gripper.connect(IP, 63352)
+    gripper.reset()
     webapp = Flask(__name__)
 
     # Route for Setting Load
