@@ -14,7 +14,7 @@ CONFIG = {  "ip": "192.168.0.10",
             "freq": 500, # explicit control freq
             "port": 30004, 
             # positions
-            "center": [-0.048, -0.45190, 0.02810, 2.221, -2.221, 0.0], 
+            "center": [-0.16090, -0.66350, -0.03650, 2.221, 2.221, 0.0], 
             "linear_target_speed_factor": [0.5, 0.5, 0.5],   # m/s
             "angular_speed": 0.3,  # rad/s
             "linear_factor": [3.10, 3.1, 3.1],

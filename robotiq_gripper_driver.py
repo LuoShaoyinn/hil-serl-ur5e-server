@@ -204,11 +204,11 @@ class RobotiqGripper:
 
     def get_open_position(self) -> int:
         """Returns what is considered the open position for gripper (minimum position value)."""
-        return self.get_min_position()
+        return 0 # self.get_min_position()
 
     def get_closed_position(self) -> int:
         """Returns what is considered the closed position for gripper (maximum position value)."""
-        return self.get_max_position()
+        return 130 # self.get_max_position()
 
     def is_open(self):
         """Returns whether the current position is considered as being fully open."""
