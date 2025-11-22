@@ -120,14 +120,6 @@ class UR_controller():
         self.target_pos = pos
         self.target_ori = ori
     
-    def long_movel(self, pos, ori):
-        vel = np.linalg.norm(pos - self.target_pos) / (time.time() - self.last_movel_time)
-        self.last_movel_time = time.time()
-
-        self.target_vel = self.target_vel * 0.8 + vel * 0.2
-        self.target_pos = pos
-        self.target_ori = ori
-
     def getActualTCPPose(self): # patch for uncertain rotate vector:
         self.lock.acquire()
         pose = np.array(self.rtde_r.getActualTCPPose())
@@ -167,7 +159,12 @@ class UR_controller():
             while True:
                 next_time_ns = mono() + dt_ns
                 
-                # print(self.target_vel)
+                TCP_torque = np.asarray(self.rtde_r.getActualTCPForce())
+                if np.max(np.abs(TCP_torque)) > 20.0:
+                    self.rtde_c.speedL(TCP_torque * 0.0005, 1)
+                    print(f"[+] protected, forces = {TCP_torque}")
+                    time.sleep(max(0, next_time_ns - mono()) / 1e9 + 0.01)
+                    continue
  
                 speed = True
                 target_pos, target_ori = self.a_step(dt_ns / 1e9, speed=speed)

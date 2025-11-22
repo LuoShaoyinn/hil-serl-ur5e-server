@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import numpy as np
+import time
 from scipy.spatial.transform import Rotation as R
 from absl import app
 
@@ -14,8 +15,10 @@ def main(_):
     ur5e = ur5e_driver.UR_controller()
     gripper = robotiq_gripper_driver.RobotiqGripper()
     gripper.connect(IP, 63352)
-    gripper.reset()
     webapp = Flask(__name__)
+
+    time.sleep(3)
+    gripper.reset()
 
     # Route for Setting Load
     @webapp.route("/set_load", methods=["POST"])
@@ -145,18 +148,6 @@ def main(_):
         print("Moving to", pos)
         return "Moved"
     
-    @webapp.route("/long_pose", methods=["POST"])
-    def long_pose():
-        pos = np.array(request.json["arr"])
-        if pos[3] < 0:
-            pos *= np.array([1, 1, 1, -1, -1, -1, -1])
-        xyz = pos[:3]
-        r = R.from_quat(pos[3:])
-        print(f"pose: {xyz} {pos[3:]}")
-        ur5e.long_movel(xyz, r)
-        print("Moving to", pos)
-        return "Moved"
-
     # Route for getting all state information
     @webapp.route("/getstate", methods=["POST"])
     def get_state():
