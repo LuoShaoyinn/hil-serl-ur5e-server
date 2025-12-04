@@ -144,11 +144,19 @@ def main(_):
             pos *= np.array([1, 1, 1, -1, -1, -1, -1])
         xyz = pos[:3]
         r = R.from_quat(pos[3:])
-        print(f"pose: {xyz} {pos[3:]}")
-        ur5e.movel(xyz, r)
-        print("Moving to", pos)
+        ur5e.pose(xyz, r)
         return "Moved"
     
+    @webapp.route("/movel", methods=["POST"])
+    def movel():
+        pos = np.array(request.json["arr"])
+        if pos[3] < 0:
+            pos *= np.array([1, 1, 1, -1, -1, -1, -1])
+        xyz = pos[:3]
+        r = R.from_quat(pos[3:])
+        ur5e.movel(xyz, r)
+        return "Moved"
+
     # Route for getting all state information
     @webapp.route("/getstate", methods=["POST"])
     def get_state():

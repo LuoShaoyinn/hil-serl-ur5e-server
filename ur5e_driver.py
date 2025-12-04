@@ -14,16 +14,16 @@ CONFIG = {  "ip": "192.168.0.10",
             "freq": 500, # explicit control freq
             "port": 30004, 
             # positions
-            "center": [-0.07381, -0.66531, -0.04133, 2.221, 2.221, 0.0],
-            "linear_factor": [3.10, 3.1, 3.1],
-            "angular_factor": 1.3,
-            "linear_2_factor": [5.0, 5.0, 5.0],
-            "angular_2_factor": 3.0,
-            "linear_d_factor": 0.0,
-            "angular_d_factor": 0.0,
+            "center": [-0.07381, -0.66531, 0.03, 2.221, 2.221, 0.0],
+            "linear_factor": [1000, 1000, 1000],
+            "linear_d_factor": 100.0,
+            "angular_factor": 30,
+            "angular_d_factor": 25.0,
+            "force_damping_factor": 0.05, 
             # limitation
-            "tcp_torque_limit": [20, 20, 20, 2, 2, 2], 
-            "angular_speed": 0.3,  # rad/s
+            "max_speed":  [1, 1, 1, 0.4, 0.4, 0.4], 
+            "max_force":  [30, 30, 30], 
+            "max_torque": [3, 3, 3], 
             # underlying parameters
             "inner_freq": 500, # implicit freq for robot
           }
@@ -34,10 +34,11 @@ class UR_controller():
         self.config = CONFIG
 
         # global variables
-        self.target_vel = 0.2
         self.last_movel_time = time.time()
         self.target_pos = np.array(self.config["center"])[:3]
         self.target_ori = R.from_rotvec(np.array(self.config["center"])[3:])
+        self.e_pos = np.zeros(3, dtype=np.float32)
+        self.e_ori = np.zeros(3, dtype=np.float32)
         
         # start daemon thread
         self.daemon_status = "stop"
@@ -120,12 +121,17 @@ class UR_controller():
         self.target_pos = np.array(self.config["center"])[:3]
         self.target_ori = R.from_rotvec(np.array(self.config["center"])[3:])
 
-    def movel(self, pos, ori):
-        self.last_movel_time = time.time()
-
+    def pose(self, pos, ori):
+        self.daemon_command = "none"
         self.target_vel = 0.2
         self.target_pos = pos
         self.target_ori = ori
+
+    def movel(self, pos, ori):
+        self.target_pos = pos
+        self.target_ori = ori
+        self.daemon_command = "movel"
+
     
     def getActualTCPPose(self): # patch for uncertain rotate vector:
         self.lock.acquire()
@@ -148,8 +154,9 @@ class UR_controller():
                 rtde_control.RTDEControlInterface.FLAG_USE_EXT_UR_CAP,
                 self.config["port"])
         self.rtde_r.waitPeriod(self.rtde_r.initPeriod())
-        init_TCP_torque = np.asarray(self.rtde_r.getActualTCPForce())
-        TCP_torque = np.zeros(6, dtype=np.float32)
+        self.rtde_c.zeroFtSensor()
+        self.rtde_c.forceModeSetDamping(CONFIG["force_damping_factor"])
+        self.rtde_c.forceModeSetGainScaling(1)
 
         # initlize parameters
         self.target_q = np.array(self.rtde_r.getActualQ())
@@ -166,46 +173,26 @@ class UR_controller():
         self.daemon_status = "running"
         try:
             while True:
+                if self.daemon_command == "movel":    
+                    self.rtde_c.forceModeStop()
+                    self.rtde_c.moveL(np.concatenate([self.target_pos, self.target_ori.as_rotvec()]))
+                    self.daemon_command = "none"
+
                 next_time_ns = mono() + dt_ns
                  
-                speed = True
-                target_pos, target_ori = self.a_step(dt_ns / 1e9, speed=speed)
-                velocity = np.concatenate([target_pos, target_ori.as_rotvec()])
-                # print(f" target={self.target_pos}, {self.target_ori.as_rotvec()} "
-                #      + f"curr={np.array(self.rtde_r.getActualTCPPose())}, astep: {target_pose}")
+                target_pos, target_ori_rotv = self.a_step()
+                target_tcp_force = np.concatenate([target_pos, target_ori_rotv])
+                actual_tcp_force = np.asarray(self.rtde_r.getActualTCPForce())
 
-                try:
-                    TCP_torque = TCP_torque * 0.8 + (np.asarray(self.rtde_r.getActualTCPForce()) - init_TCP_torque) * 0.2
-                except:
-                    pass
-                if np.any(abs(TCP_torque) > np.asarray(CONFIG["tcp_torque_limit"])) :
-                    print(f"[!] protected ! {TCP_torque}")
-
-                    v = velocity[:3]
-                    w = velocity[3:]
-                    F = TCP_torque[:3]
-                    M = TCP_torque[3:]
-                    v -= min(0.0, np.dot(v, F)) * F / np.dot(F, F)
-                    w -= min(0.0, np.dot(w, M)) * M / np.dot(F, F)
-                    velocity = np.concatenate([v, w])
-
-                    print(f"velocity fixed to: {velocity}")
-
-
-                if np.linalg.norm(velocity) < 2e-3:
-                    velocity = np.zeros(6, dtype=np.float32)
+                # print(f"target: {target_tcp_force} actual: {actual_tcp_force}")
+ 
+                self.rtde_c.forceMode(\
+                        np.zeros(6, dtype=np.float32),\
+                        np.ones(6, dtype=np.int32), \
+                        target_tcp_force, \
+                        2, 
+                        np.asarray(CONFIG["max_speed"]))
                 
-                print(f"velocity: {velocity}")
-                self.rtde_c.speedL(velocity, 1)
-                
-                # if resolv_succ:
-                #    self.target_q = np.array(resolv_q)
-                # current_q = np.array(self.rtde_r.getActualQ())
-                # command_q = np.clip(self.target_q, \
-                #               current_q - speed_q, \
-                #               current_q + speed_q)
-                # print(f" cmdq: {command_q} wantq: {self.target_q}")
-
                 time.sleep(max(0, next_time_ns - mono()) / 1e9)
         except Exception as e:
             print(f"[daem] Exception got {e}")
@@ -217,44 +204,27 @@ class UR_controller():
         self.daemon_status = "stop"
 
     
-    def a_step(self, dt, speed):
+    def a_step(self):
         p_v = np.array(self.config["linear_factor"])
-        p_w = np.array(self.config["angular_factor"])
-        p2_v = np.array(self.config["linear_2_factor"])
-        # p2_w = np.array(self.config["angular_2_factor"])
         d_v = np.array(self.config["linear_d_factor"])
+        p_w = np.array(self.config["angular_factor"])
         d_w = np.array(self.config["angular_d_factor"])
-        if not speed:
-            p_v, p_w = p_v * dt, p_w * dt
-        v = np.clip(self.target_vel, 0, 0.2)
-        w = np.array(self.config["angular_speed"])
+        max_force = np.asarray(CONFIG["max_force"])
+        max_torque = np.asarray(CONFIG["max_torque"])
 
-        pose = np.array(self.rtde_r.getActualTCPPose())
-        sped = np.array(self.rtde_r.getActualTCPSpeed())
+        # compute error
+        curr_pose = np.asarray(self.rtde_r.getActualTCPPose()) 
+        e_pos = self.target_pos - curr_pose[:3]
+        e_ori = (self.target_ori * R.from_rotvec(curr_pose[3:]).inv()).as_rotvec()
 
-        # limit the speed at linear axis
-        curr_pos = pose[:3]
-        sped_pos = sped[:3]
-        delta_pos = (self.target_pos - curr_pos)
-        # print(f"err={delta_pos} speed: {p_v * delta_pos}, {d_v * sped_pos}, {p2_v * delta_pos * np.linalg.norm(delta_pos)}")
-        delta_pos = np.clip(p_v * delta_pos
-                            + d_v * sped_pos
-                            + p2_v * delta_pos * np.linalg.norm(delta_pos),
-                            -v, v)
+        # compute delta
+        d_e_pos = e_pos - self.e_pos
+        d_e_ori = e_ori - self.e_ori
+        self.e_pos, self.e_ori = e_pos, e_ori
         
-        # limit the speed
-        curr_ori = R.from_rotvec(pose[3:])
-        sped_ori = R.from_rotvec(sped[3:])
-        sped_ori_rotv = sped_ori.as_rotvec()
-        delta_ori = self.target_ori * curr_ori.inv()
-        delta_ori_rotv = delta_ori.as_rotvec()
-        delta_ori_rotv = np.clip(p_w * delta_ori_rotv
-                                 + d_w * sped_ori_rotv,
-                                 -w, w)
-        delta_ori = R.from_rotvec(delta_ori_rotv)
-
-        if speed:
-            return delta_pos, delta_ori
-        else:
-            return delta_pos + curr_pos, delta_ori * curr_ori
+        # pd control
+        force  = np.clip(p_v * e_pos + d_v * d_e_pos,  -max_force,  max_force)
+        torque = np.clip(p_w * e_ori + d_w * d_e_ori, -max_torque, max_torque)
+        
+        return force, torque
  
