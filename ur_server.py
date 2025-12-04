@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify
+import logging as pylog
 import numpy as np
 import time
 from scipy.spatial.transform import Rotation as R
-from absl import app
+from absl import app, logging
 
 import ur5e_driver
 import robotiq_gripper_driver
@@ -178,5 +179,7 @@ def main(_):
 
 
 if __name__ == "__main__":
+    pylog.getLogger('werkzeug').setLevel(pylog.ERROR)
+    logging.set_verbosity(logging.FATAL)
     app.run(main)
 

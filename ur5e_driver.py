@@ -14,9 +14,7 @@ CONFIG = {  "ip": "192.168.0.10",
             "freq": 500, # explicit control freq
             "port": 30004, 
             # positions
-            "center": [-0.16090, -0.66350, -0.03650, 2.221, 2.221, 0.0], 
-            "linear_target_speed_factor": [0.5, 0.5, 0.5],   # m/s
-            "angular_speed": 0.3,  # rad/s
+            "center": [-0.07381, -0.66531, -0.04133, 2.221, 2.221, 0.0],
             "linear_factor": [3.10, 3.1, 3.1],
             "angular_factor": 1.3,
             "linear_2_factor": [5.0, 5.0, 5.0],
@@ -24,19 +22,11 @@ CONFIG = {  "ip": "192.168.0.10",
             "linear_d_factor": 0.0,
             "angular_d_factor": 0.0,
             # limitation
-            "max_linear_velocity": 0.005, # use in reverse kinetic
-            "max_angular_velocity": 0.005,
-            "joint_speed_limit": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1], # used in safety check
+            "tcp_torque_limit": [20, 20, 20, 2, 2, 2], 
+            "angular_speed": 0.3,  # rad/s
             # underlying parameters
             "inner_freq": 500, # implicit freq for robot
-            "servoJ_dt": 0.04,  # the internal freq, always but not restricted to 
-                                # be consist with 'freq'
-            "servoJ_lookahead": 0.03, 
-                    # lookahead_time – time [S], range [0.03,0.2] smoothens 
-                    #   the trajectory with this lookahead time
-                    # gain – proportional gain for following target position, 
-                    #   range [100,2000]
-            "servoJ_gain": 1000}
+          }
 
 
 class UR_controller():
@@ -72,38 +62,56 @@ class UR_controller():
     # Interfaces Implement
     #
     def get_TCP_pose(self): # x, y, z, rx, ry, rz in rotation vector
-        ret = self.getActualTCPPose()
-        return ret
+        try:
+            self.tcp_pose = self.getActualTCPPose()
+        except Exception:
+            pass
+        return self.tcp_pose
 
     def get_TCP_vel(self):
-        self.lock.acquire()
-        ret = self.rtde_r.getActualTCPSpeed()
-        self.lock.release()
-        return ret
+        try:
+            self.lock.acquire()
+            self.tcp_speed = self.rtde_r.getActualTCPSpeed()
+            self.lock.release()
+        except Exception:
+            pass
+        return self.tcp_speed
     
     def get_force(self):
-        self.lock.acquire()
-        ret = self.rtde_r.getActualTCPForce()
-        self.lock.release()
-        return ret
+        try:
+            self.lock.acquire()
+            self.tcp_force = self.rtde_r.getActualTCPForce()
+            self.lock.release()
+        except Exception:
+            pass
+        return self.tcp_force
     
     def get_torque(self):
-        self.lock.acquire()
-        ret = self.rtde_c.getJointTorques()
-        self.lock.release()
-        return ret
+        try:
+            self.lock.acquire()
+            self.joint_torque = self.rtde_c.getJointTorques()
+            self.lock.release()
+        except Exception:
+            pass
+        return self.joint_torque
     
     def get_joint_q(self):
-        self.lock.acquire()
-        ret = self.rtde_r.getActualQ()
-        self.lock.release()
-        return ret
+        try:
+            self.lock.acquire()
+            self.actual_q = self.rtde_r.getActualQ()
+            self.lock.release()
+        except Exception:
+            pass
+        return self.actual_q
     
     def get_joint_dq(self):
-        self.lock.acquire()
-        ret = self.rtde_r.getActualQd()
-        self.lock.release()
-        return ret
+        try:
+            self.lock.acquire()
+            self.joint_dq = self.rtde_r.getActualQd()
+            self.lock.release()
+        except Exception:
+            pass
+        return self.joint_dq
     
     def get_jacobian(self):
         return [[0] * 6] * 7
@@ -113,7 +121,6 @@ class UR_controller():
         self.target_ori = R.from_rotvec(np.array(self.config["center"])[3:])
 
     def movel(self, pos, ori):
-        vel = np.linalg.norm(pos - self.target_pos) / (time.time() - self.last_movel_time)
         self.last_movel_time = time.time()
 
         self.target_vel = 0.2
@@ -141,7 +148,9 @@ class UR_controller():
                 rtde_control.RTDEControlInterface.FLAG_USE_EXT_UR_CAP,
                 self.config["port"])
         self.rtde_r.waitPeriod(self.rtde_r.initPeriod())
-        
+        init_TCP_torque = np.asarray(self.rtde_r.getActualTCPForce())
+        TCP_torque = np.zeros(6, dtype=np.float32)
+
         # initlize parameters
         self.target_q = np.array(self.rtde_r.getActualQ())
         dt_ns = 1e9 / self.config["freq"]
@@ -158,28 +167,37 @@ class UR_controller():
         try:
             while True:
                 next_time_ns = mono() + dt_ns
-                
-                TCP_torque = np.asarray(self.rtde_r.getActualTCPForce())
-                if np.max(np.abs(TCP_torque)) > 20.0:
-                    self.rtde_c.speedL(TCP_torque * 0.0005, 1)
-                    print(f"[+] protected, forces = {TCP_torque}")
-                    time.sleep(max(0, next_time_ns - mono()) / 1e9 + 0.01)
-                    continue
- 
+                 
                 speed = True
                 target_pos, target_ori = self.a_step(dt_ns / 1e9, speed=speed)
-                target_pose = np.concatenate([target_pos, target_ori.as_rotvec()])
+                velocity = np.concatenate([target_pos, target_ori.as_rotvec()])
                 # print(f" target={self.target_pos}, {self.target_ori.as_rotvec()} "
                 #      + f"curr={np.array(self.rtde_r.getActualTCPPose())}, astep: {target_pose}")
-                if speed:
-                    if np.linalg.norm(target_pose) > 2e-3:
-                        self.rtde_c.speedL(target_pose, 1)
-                    else:
-                        self.rtde_c.speedL(np.zeros(6), 1)
-                    # print(f"speed: {np.array(target_pose)}")
-                else:
-                    self.target_q = np.array(self.robot_ik(target_pose))
-                    self.execute_servoj(self.target_q)
+
+                try:
+                    TCP_torque = TCP_torque * 0.8 + (np.asarray(self.rtde_r.getActualTCPForce()) - init_TCP_torque) * 0.2
+                except:
+                    pass
+                if np.any(abs(TCP_torque) > np.asarray(CONFIG["tcp_torque_limit"])) :
+                    print(f"[!] protected ! {TCP_torque}")
+
+                    v = velocity[:3]
+                    w = velocity[3:]
+                    F = TCP_torque[:3]
+                    M = TCP_torque[3:]
+                    v -= min(0.0, np.dot(v, F)) * F / np.dot(F, F)
+                    w -= min(0.0, np.dot(w, M)) * M / np.dot(F, F)
+                    velocity = np.concatenate([v, w])
+
+                    print(f"velocity fixed to: {velocity}")
+
+
+                if np.linalg.norm(velocity) < 2e-3:
+                    velocity = np.zeros(6, dtype=np.float32)
+                
+                print(f"velocity: {velocity}")
+                self.rtde_c.speedL(velocity, 1)
+                
                 # if resolv_succ:
                 #    self.target_q = np.array(resolv_q)
                 # current_q = np.array(self.rtde_r.getActualQ())
@@ -203,13 +221,12 @@ class UR_controller():
         p_v = np.array(self.config["linear_factor"])
         p_w = np.array(self.config["angular_factor"])
         p2_v = np.array(self.config["linear_2_factor"])
-        p2_w = np.array(self.config["angular_2_factor"])
+        # p2_w = np.array(self.config["angular_2_factor"])
         d_v = np.array(self.config["linear_d_factor"])
         d_w = np.array(self.config["angular_d_factor"])
         if not speed:
             p_v, p_w = p_v * dt, p_w * dt
-        v = np.array(self.config["linear_target_speed_factor"]) * self.target_vel
-        v = np.clip(v, 0, 0.2)
+        v = np.clip(self.target_vel, 0, 0.2)
         w = np.array(self.config["angular_speed"])
 
         pose = np.array(self.rtde_r.getActualTCPPose())
@@ -241,49 +258,3 @@ class UR_controller():
         else:
             return delta_pos + curr_pos, delta_ori * curr_ori
  
-
-    def execute_servoj(self, joint_q):
-        if not self.safty_check(joint_q):
-            return
-        self.rtde_c.servoJ(joint_q.tolist(), \
-                0.1, 0.05, # unused in current version
-                self.config["servoJ_dt"], 
-                self.config["servoJ_lookahead"], 
-                self.config["servoJ_gain"])
-    
-
-    def robot_ik(self, pose_vector):
-        self.lock.acquire()
-        joint = self.rtde_c.getInverseKinematics(pose_vector, \
-                max_position_error = self.config["max_linear_velocity"], \
-                max_orientation_error = self.config["max_angular_velocity"])
-        self.lock.release()
-
-        if joint is None:
-            print("Can not find stable solution!")
-            print(f"current q: {self.rtde_r.getActualQ()}")
-            print(f"pose: {self.rtde_r.getActualTCPPose()}")
-            print(f"want q: {joint} pose: {pose_vector}")
-            return self.rtde_r.getActualQ()
-        return joint
-
-
-    def safty_check(self, joint):
-        # value verification
-        if np.any(np.isnan(joint)):
-            print("[exec] Is nan!")
-            return False
-        # tcp pose inside a range
-        if np.linalg.norm(np.array(self.config["center"])[:3] - \
-                self.rtde_r.getActualTCPPose()[:3]) > 0.200:
-            print("[exec] Out of bound!")
-            return False
-        # joint speed limitation
-        if np.any(
-                np.abs(np.array(self.rtde_r.getActualQ()) - joint) > 
-                np.array(self.config["joint_speed_limit"])):
-            print(f"[exec] Joint too fast! at {np.array(self.rtde_r.getActualQ())} want {joint}")
-            return False
-        return True
-
-

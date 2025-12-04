@@ -208,7 +208,7 @@ class RobotiqGripper:
 
     def get_closed_position(self) -> int:
         """Returns what is considered the closed position for gripper (maximum position value)."""
-        return 130 # self.get_max_position()
+        return 232 # self.get_max_position()
 
     def is_open(self):
         """Returns whether the current position is considered as being fully open."""
@@ -269,10 +269,10 @@ class RobotiqGripper:
         return self._set_vars(var_dict), clip_pos
 
     def open(self):
-        self.move(self.get_open_position(), 200, 1)
+        self.move(self.get_open_position(), 200, 200)
     
     def close(self):
-        self.move(self.get_closed_position(), 200, 1)
+        self.move(self.get_closed_position(), 200, 200)
     
     def close_slow(self):
         self.move(self.get_closed_position(), 1, 1)
