@@ -175,14 +175,16 @@ class UR_controller():
             while True:
                 if self.daemon_command == "movel":    
                     self.rtde_c.forceModeStop()
-                    self.rtde_c.moveL(np.concatenate([self.target_pos, self.target_ori.as_rotvec()]))
+                    self.rtde_c.moveL(
+                            np.concatenate([self.target_pos, \
+                                self.target_ori.as_rotvec()]), \
+                            speed = 0.05, acceleration = 1.2)
                     self.daemon_command = "none"
 
                 next_time_ns = mono() + dt_ns
                  
                 target_pos, target_ori_rotv = self.a_step()
                 target_tcp_force = np.concatenate([target_pos, target_ori_rotv])
-                actual_tcp_force = np.asarray(self.rtde_r.getActualTCPForce())
 
                 # print(f"target: {target_tcp_force} actual: {actual_tcp_force}")
  
