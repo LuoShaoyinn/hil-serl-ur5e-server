@@ -101,7 +101,7 @@ class RobotiqGripper:
         with self.command_lock:
             cmd = f"GET {variable}\n"
             self.socket.sendall(cmd.encode(self.ENCODING))
-            data = self.socket.recv(1024)
+            data = self.socket.recv(10240)
 
         # expect data of the form 'VAR x', where VAR is an echo of the variable name, and X the value
         # note some special variables (like FLT) may send 2 bytes, instead of an integer. We assume integer here
@@ -269,13 +269,13 @@ class RobotiqGripper:
         return self._set_vars(var_dict), clip_pos
 
     def open(self):
-        self.move(self.get_open_position(), 200, 200)
+        self.move(self.get_open_position(), 256, 200)
     
     def close(self):
-        self.move(self.get_closed_position(), 200, 200)
+        self.move(self.get_closed_position(), 256, 200)
     
     def close_slow(self):
-        self.move(self.get_closed_position(), 1, 1)
+        self.move(self.get_closed_position(), 100, 1)
 
     def move_and_wait_for_pos(self, position: int, speed: int, force: int) -> Tuple[int, ObjectStatus]:  # noqa
         """Sends commands to start moving towards the given position, with the specified speed and force, and

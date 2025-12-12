@@ -14,7 +14,7 @@ CONFIG = {  "ip": "192.168.0.10",
             "freq": 500, # explicit control freq
             "port": 30004, 
             # positions
-            "center": [-0.07381, -0.66531, 0.03, 2.221, 2.221, 0.0],
+            "center": [-0.1060, -0.684, 0.0011, 2.221, 2.221, 0.0],
             "linear_factor": [1000, 1000, 1000],
             "linear_d_factor": 100.0,
             "angular_factor": 30,
@@ -178,7 +178,7 @@ class UR_controller():
                     self.rtde_c.moveL(
                             np.concatenate([self.target_pos, \
                                 self.target_ori.as_rotvec()]), \
-                            speed = 0.05, acceleration = 1.2)
+                            speed = 0.2, acceleration = 1)
                     self.daemon_command = "none"
 
                 next_time_ns = mono() + dt_ns

@@ -90,35 +90,30 @@ def main(_):
     # Route for Activating the Gripper
     @webapp.route("/activate_gripper", methods=["POST"])
     def activate_gripper():
-        print("activate gripper")
         gripper.activate()
         return "Activated"
 
     # Route for Resetting the Gripper. It will reset and activate the gripper
     @webapp.route("/reset_gripper", methods=["POST"])
     def reset_gripper():
-        print("reset gripper")
         gripper.reset()
         return "Reset"
 
     # Route for Opening the Gripper
     @webapp.route("/open_gripper", methods=["POST"])
     def open():
-        print("open")
         gripper.open()
         return "Opened"
 
     # Route for Closing the Gripper
     @webapp.route("/close_gripper", methods=["POST"])
     def close():
-        print("close")
         gripper.close()
         return "Closed"
 
     # Route for Closing the Gripper
     @webapp.route("/close_gripper_slow", methods=["POST"])
     def close_slow():
-        print("close")
         gripper.close_slow()
         return "Closed"
 
